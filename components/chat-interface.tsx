@@ -87,7 +87,7 @@ const ChatInterface = () => {
     try {
       let finalPrompt = inputValue;
 
-      // 如果启用了联网,先获取Google搜索结果
+      // 如果启用了联网,先获取马蜂窝搜索结果
       if (webEnabled) {
         try {
           const searchResults = await fetch("/api/search", {
@@ -99,15 +99,19 @@ const ChatInterface = () => {
           }).then((res) => res.json());
 
           finalPrompt = `
-基于以下搜索结果回答问题:"${inputValue}"
+基于以下马蜂窝游记搜索结果回答问题:"${inputValue}"
 
 搜索结果:
-${searchResults.join("\n")}
+${
+  Array.isArray(searchResults)
+    ? searchResults.map((result, i) => `${i + 1}. ${result}`).join("\n")
+    : "未找到相关游记信息"
+}
 
-请用中文总结相关信息回答问题。
+请根据这些游记信息，用中文总结相关旅游体验和建议。
 `;
         } catch (error) {
-          console.error("搜索失败:", error);
+          console.error("马蜂窝游记搜索失败:", error);
           finalPrompt = inputValue;
         }
       }
