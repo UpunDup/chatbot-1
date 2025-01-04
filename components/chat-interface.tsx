@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Paperclip, Globe, Mic, Send } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 
 // 定义消息类型
 type Message = {
@@ -216,10 +220,36 @@ ${searchResults.join("\n")}
                   className={`rounded-lg p-4 ${
                     message.role === "user"
                       ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
+                      : "bg-muted prose prose-neutral dark:prose-invert max-w-none"
                   }`}
                 >
-                  {message.content}
+                  {message.role === "user" ? (
+                    message.content
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                      className="break-words"
+                      components={{
+                        pre: ({ node, ...props }) => (
+                          <div className="overflow-auto my-2 bg-neutral-100 dark:bg-neutral-800 p-2 rounded-lg">
+                            <pre {...props} />
+                          </div>
+                        ),
+                        code: ({ node, inline, ...props }) =>
+                          inline ? (
+                            <code
+                              className="bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded"
+                              {...props}
+                            />
+                          ) : (
+                            <code {...props} />
+                          ),
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  )}
                 </div>
               </div>
               {message.role === "user" && (
