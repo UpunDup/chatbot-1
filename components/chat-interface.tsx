@@ -30,10 +30,13 @@ type StreamChunk = {
 // 添加配置常量
 const API_CONFIG = {
   baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
-  model: "Qwen/Qwen2.5-7B-Instruct",
+  model: "Qwen/QVQ-72B-Preview",
   apiKey: process.env.NEXT_PUBLIC_SILICON_API_KEY || "",
-  systemMessage:
-    "你是一个景点推荐机器人。请将收到的景点信息以 markdown 列表的形式输出，每个景点前面加上 '- ' 符号。不要添加任何额外的描述、建议或者行程规划。",
+  systemMessage: `你是一个专业的旅游助手。对于用户提供的城市：
+1. 首先用1-2句话简要介绍这个城市的特色
+2. 然后说"以下是我为您精选的最佳游玩景点："
+3. 最后将收到的景点信息以 markdown 列表的形式输出，每个景点前面加上 '- ' 符号
+4. 不要添加任何额外的建议或行程规划`,
 };
 
 const ChatInterface = () => {
@@ -50,6 +53,7 @@ const ChatInterface = () => {
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [webEnabled, setWebEnabled] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("gpt-4");
 
   // 取消未完成的请求
   useEffect(() => {
@@ -65,52 +69,60 @@ const ChatInterface = () => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: Date.now(),
-      content: inputValue,
-      role: "user",
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
-    setIsLoading(true);
-
-    abortControllerRef.current = new AbortController();
-
     try {
-      let finalPrompt = inputValue;
+      setIsLoading(true);
+      const userMessage = inputValue.trim();
+      setInputValue("");
 
-      // 检查输入是否包含城市名称
-      const cityMatch = inputValue.match(/^([^、]+)/);
-      if (cityMatch && webEnabled) {
-        try {
-          // 只获取 TripAdvisor 景点信息
-          const tripAdvisorResults = await fetch("/api/tripadvisor", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ city: cityMatch[1] }),
-          }).then((res) => res.json());
+      // 添加用户消息到对话
+      const newUserMessage: Message = {
+        id: Date.now(),
+        content: userMessage,
+        role: "user",
+      };
+      setMessages((prev) => [...prev, newUserMessage]);
 
-          finalPrompt = `
-请将以下${cityMatch[1]}的景点信息以 markdown 列表形式输出:
+      // 创建新的 AI 消息占位
+      const newAiMessage: Message = {
+        id: Date.now() + 1,
+        content: "",
+        role: "ai",
+      };
+      setMessages((prev) => [...prev, newAiMessage]);
 
-${
-  Array.isArray(tripAdvisorResults)
-    ? tripAdvisorResults
-        .map((spot) => `- ${spot.name} (评分: ${spot.rating}分)`)
-        .join("\n")
-    : "- 未找到景点信息"
-}
+      let finalPrompt = userMessage;
+      if (webEnabled) {
+        const cityMatch = userMessage.match(/[(\u4e00-\u9fa5]{2,}市?/);
+        const city = cityMatch ? cityMatch[0].replace(/市$/, "") : null;
 
-请直接列出景点名称，每行以 '- ' 开头，保持原有格式，不要添加任何额外的描述或建议。
-`;
-        } catch (error) {
-          console.error("搜索失败:", error);
-          finalPrompt = inputValue;
+        if (city) {
+          try {
+            const attractionsResponse = await fetch("/api/tripadvisor", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ city }),
+            });
+
+            if (attractionsResponse.ok) {
+              const attractions = await attractionsResponse.json();
+              if (!attractions.error) {
+                finalPrompt = `用户想了解${city}的旅游信息。
+
+这是${city}的主要景点数据：
+${attractions.map((a: any) => `- ${a.name}`).join("\n")}
+
+请按照系统提示的格式回复，先简要介绍${city}，然后列出这些景点。`;
+              }
+            }
+          } catch (error) {
+            console.error("获取景点数据失败:", error);
+          }
         }
       }
 
+      // 调用 AI 接口
       const response = await fetch(API_CONFIG.baseUrl, {
         method: "POST",
         headers: {
@@ -129,72 +141,53 @@ ${
               content: finalPrompt,
             },
           ],
-          stream: true,
         }),
-        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
-        throw new Error("API请求失败");
+        throw new Error(`API请求失败: ${response.status}`);
       }
 
-      // 创建一个新的AI消息
-      const aiMessage: Message = {
-        id: Date.now() + 1,
-        content: "",
-        role: "ai",
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+      const data = await response.json();
+      const aiResponse =
+        data.choices[0]?.message?.content || "抱歉，我无法生成回复。";
 
-      // 处理流式响应
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const data: StreamChunk = JSON.parse(line.slice(6));
-              const content = data.choices[0]?.delta?.content || "";
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === aiMessage.id
-                    ? { ...msg, content: msg.content + content }
-                    : msg
-                )
-              );
-            } catch (e) {
-              console.error("解析响应数据失败:", e);
-            }
-          }
+      // 更新 AI 消息内容
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage.role === "ai") {
+          lastMessage.content = aiResponse;
         }
-      }
-    } catch (error: any) {
-      if (error.name === "AbortError") {
-        console.log("请求被取消");
-      } else {
-        console.error("发送消息失败:", error);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 2,
-            content: "抱歉，发送消息时出现错误。",
-            role: "ai",
-          },
-        ]);
-      }
+        return newMessages;
+      });
+    } catch (error) {
+      console.error("Error:", error);
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage.role === "ai") {
+          lastMessage.content = "抱歉，处理您的请求时出现错误。请稍后重试。";
+        }
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
-      abortControllerRef.current = null;
     }
   };
+
+  const ModelSelector = () => (
+    <select
+      value={selectedModel}
+      onChange={(e) => setSelectedModel(e.target.value)}
+      className="rounded-md border p-2 mb-4"
+    >
+      <option value="gpt-4">GPT-4</option>
+      <option value="claude-3">Claude 3</option>
+      <option value="gemini-pro">Gemini Pro</option>
+      {/* 添加其他模型选项 */}
+    </select>
+  );
 
   return (
     <Card className="w-full h-[90vh] max-w-6xl flex flex-col">
