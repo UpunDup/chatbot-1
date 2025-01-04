@@ -41,21 +41,7 @@ const API_CONFIG = {
 const ChatInterface = () => {
   // 添加状态管理
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      content: "LLM具体功能是什么",
-      role: "ai"
-    },
-    {
-      id: 2, 
-      content: "能详细解释一下NLU的应用场景吗？",
-      role: "user"
-    },
-    {
-      id: 3,
-      content: "NLU在现代技术中有广泛的应用场景：\n• 智能客服：自动理解客户询问，提供相关解答\n• 搜索引擎：理解用户搜索意图，返回相关结果\n• 语音助手：理解口头指令，执行相应操作\n• 情感分析：分析文本中的情感倾向和态度",
-      role: "ai"
-    }
+
   ])
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
