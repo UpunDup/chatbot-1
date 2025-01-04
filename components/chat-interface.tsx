@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Paperclip, Globe, Mic, Send } from "lucide-react";
+import { Paperclip, Globe, Mic, Send, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -30,27 +30,19 @@ type StreamChunk = {
 // 添加配置常量
 const API_CONFIG = {
   baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
-  model: "Qwen/Qwen2.5-7B-Instruct", // 选择您想使用的模型
-  apiKey: process.env.NEXT_PUBLIC_SILICON_API_KEY || "", // 请确保在.env.local中设置此环境变量
+  model: "Qwen/Qwen2.5-7B-Instruct",
+  apiKey: process.env.NEXT_PUBLIC_SILICON_API_KEY || "",
+  systemMessage:
+    "你是一个景点推荐机器人。请将收到的景点信息以 markdown 列表的形式输出，每个景点前面加上 '- ' 符号。不要添加任何额外的描述、建议或者行程规划。",
 };
 
 const ChatInterface = () => {
   // 添加状态管理
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 1,
-      content: "LLM具体功能是什么",
-      role: "ai",
-    },
-    {
-      id: 2,
-      content: "能详细解释一下NLU的应用场景吗？",
-      role: "user",
-    },
-    {
-      id: 3,
+      id: Date.now(),
       content:
-        "NLU在现代技术中有广泛的应用场景：\n• 智能客服：自动理解客户询问，提供相关解答\n• 搜索引擎：理解用户搜索意图，返回相关结果\n• 语音助手：理解口头指令，执行相应操作\n• 情感分析：分析文本中的情感倾向和态度",
+        "请你告诉我你想游玩的城市，并且告诉我游玩的天数（比如重庆、三天两夜），我会为你提供完整的旅行攻略！",
       role: "ai",
     },
   ]);
@@ -87,31 +79,34 @@ const ChatInterface = () => {
     try {
       let finalPrompt = inputValue;
 
-      // 如果启用了联网,先获取马蜂窝搜索结果
-      if (webEnabled) {
+      // 检查输入是否包含城市名称
+      const cityMatch = inputValue.match(/^([^、]+)/);
+      if (cityMatch && webEnabled) {
         try {
-          const searchResults = await fetch("/api/search", {
+          // 只获取 TripAdvisor 景点信息
+          const tripAdvisorResults = await fetch("/api/tripadvisor", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ query: inputValue }),
+            body: JSON.stringify({ city: cityMatch[1] }),
           }).then((res) => res.json());
 
           finalPrompt = `
-基于以下马蜂窝游记搜索结果回答问题:"${inputValue}"
+请将以下${cityMatch[1]}的景点信息以 markdown 列表形式输出:
 
-搜索结果:
 ${
-  Array.isArray(searchResults)
-    ? searchResults.map((result, i) => `${i + 1}. ${result}`).join("\n")
-    : "未找到相关游记信息"
+  Array.isArray(tripAdvisorResults)
+    ? tripAdvisorResults
+        .map((spot) => `- ${spot.name} (评分: ${spot.rating}分)`)
+        .join("\n")
+    : "- 未找到景点信息"
 }
 
-请根据这些游记信息，用中文总结相关旅游体验和建议。
+请直接列出景点名称，每行以 '- ' 开头，保持原有格式，不要添加任何额外的描述或建议。
 `;
         } catch (error) {
-          console.error("马蜂窝游记搜索失败:", error);
+          console.error("搜索失败:", error);
           finalPrompt = inputValue;
         }
       }
@@ -125,6 +120,10 @@ ${
         body: JSON.stringify({
           model: API_CONFIG.model,
           messages: [
+            {
+              role: "system",
+              content: API_CONFIG.systemMessage,
+            },
             {
               role: "user",
               content: finalPrompt,
@@ -177,12 +176,11 @@ ${
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === "AbortError") {
         console.log("请求被取消");
       } else {
         console.error("发送消息失败:", error);
-        // 添加错误提示消息
         setMessages((prev) => [
           ...prev,
           {
@@ -199,14 +197,14 @@ ${
   };
 
   return (
-    <Card className="w-full max-w-3xl mx-auto h-[600px] flex flex-col">
+    <Card className="w-full h-[90vh] max-w-6xl flex flex-col">
       <CardContent className="flex-1 overflow-auto p-4 space-y-4">
         <div className="space-y-4">
           {messages.map((message) => (
             <div
               key={message.id}
               className={`flex gap-3 ${
-                message.role === "user" ? "justify-end" : ""
+                message.role === "user" ? "justify-end" : "justify-start"
               }`}
             >
               {message.role === "ai" && (
@@ -216,43 +214,56 @@ ${
                 </Avatar>
               )}
               <div
-                className={`flex-1 ${
-                  message.role === "user" ? "max-w-[80%]" : ""
+                className={`flex ${
+                  message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
                 <div
-                  className={`rounded-lg p-4 ${
+                  className={`inline-block px-4 py-3 rounded-lg ${
                     message.role === "user"
                       ? "bg-primary text-primary-foreground"
-                      : "bg-muted prose prose-neutral dark:prose-invert max-w-none"
+                      : "bg-muted prose prose-neutral dark:prose-invert"
                   }`}
                 >
                   {message.role === "user" ? (
-                    message.content
-                  ) : (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeRaw, rehypeSanitize]}
-                      className="break-words"
-                      components={{
-                        pre: ({ node, ...props }) => (
-                          <div className="overflow-auto my-2 bg-neutral-100 dark:bg-neutral-800 p-2 rounded-lg">
-                            <pre {...props} />
-                          </div>
-                        ),
-                        code: ({ node, inline, ...props }) =>
-                          inline ? (
-                            <code
-                              className="bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded"
-                              {...props}
-                            />
-                          ) : (
-                            <code {...props} />
-                          ),
-                      }}
-                    >
+                    <span className="whitespace-pre-wrap">
                       {message.content}
-                    </ReactMarkdown>
+                    </span>
+                  ) : (
+                    <>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                        className="break-words"
+                        components={{
+                          pre: ({ node, ...props }) => (
+                            <div className="overflow-auto my-2 bg-neutral-100 dark:bg-neutral-800 p-2 rounded-lg">
+                              <pre {...props} />
+                            </div>
+                          ),
+                          code: ({ node, inline, className, ...props }: any) =>
+                            inline ? (
+                              <code
+                                className="bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded"
+                                {...props}
+                              />
+                            ) : (
+                              <code {...props} />
+                            ),
+                          p: ({ node, ...props }) => (
+                            <p className="my-1" {...props} />
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                      {message.content === "" && (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>正在思考...</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
