@@ -7,54 +7,58 @@ type Message = {
   content: string;
 };
 
-type AstrologerProps = {
+type NameDivinationProps = {
   messages: Message[];
 };
 
-// API配置复用现有的配置
 const API_CONFIG = {
   baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
   model: "THUDM/glm-4-9b-chat",
   apiKey: process.env.NEXT_PUBLIC_SILICON_API_KEY || "",
 };
 
-const COMMENTATOR_SYSTEM_PROMPT = `你是一个专业星座占卜师，负责对获取用户的出生年月日，以及可能的出生时间，进行星座占卜。请使用markdown格式输出分析结果，你的评论需要包含以下要素：
+const NAME_DIVINATION_PROMPT = `你是一个专业的姓名占卜师，负责对用户的姓名进行详细的解析和占卜。请使用markdown格式输出分析结果，你的分析需要包含以下要素：
 
-1. 使用二级标题(##)展示用户的星座
+1. 使用二级标题(##)展示用户的姓名
 2. 使用三级标题(###)分别展示以下分析内容：
-   - 基本性格
-   - 近期运势
-   - 健康建议
-   - 感情运势
-   - 事业发展
-   - 财运分析
+   - 姓氏寓意
+   - 名字寓意
+   - 五行属性
+   - 姓名评分
+   - 事业影响
+   - 感情影响
 3. 使用markdown列表、加粗、引用等格式优化排版
-4. 如果用户没有提供具体的出生时间，则可以不使用时间进行占卜
-5. 在开头使用引用格式(>)展示用户的基本信息
+4. 在开头使用引用格式(>)展示用户的基本信息
 
 示例格式：
-> 用户：张三
-> 出生：1990年1月1日
+> 姓名：张三
+> 性别：男
 
-## 水瓶座
+## 姓名解析
 
-### 基本性格
-- 个性特点1
-- 个性特点2
+### 姓氏寓意
+- **张**：...（解释姓氏的来源和含义）
 
-### 近期运势
-1. 重要时段：**3月1日至3月15日**
-2. 整体运势：...
+### 名字寓意
+- **三**：...（解释名字的含义和特点）
 
-...（其他分析内容）`;
+### 五行属性
+1. 姓氏五行：**金**
+2. 名字五行：**木**
+3. 五行搭配：...
 
-const AstrologerAgent: React.FC<AstrologerProps> = ({ messages }) => {
-  const [prediction, setPrediction] = useState<string>("");
+### 姓名评分
+- 整体评分：**88分**
+- 优点：...
+- 建议：...`;
+
+const NameDivinationAgent: React.FC<NameDivinationProps> = ({ messages }) => {
+  const [divination, setDivination] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [lastMessageId, setLastMessageId] = useState<number>(0);
   const isGeneratingRef = useRef(false);
 
-  const generatePrediction = async () => {
+  const generateDivination = async () => {
     if (
       isGeneratingRef.current ||
       messages.length === 0 ||
@@ -81,11 +85,11 @@ const AstrologerAgent: React.FC<AstrologerProps> = ({ messages }) => {
           messages: [
             {
               role: "system",
-              content: COMMENTATOR_SYSTEM_PROMPT,
+              content: NAME_DIVINATION_PROMPT,
             },
             {
               role: "user",
-              content: `请分析以下对话，提取用户信息并进行星座运势分析:\n\n${conversationHistory}`,
+              content: `请分析以下对话，提取用户姓名并进行姓名占卜:\n\n${conversationHistory}`,
             },
           ],
           temperature: 0.7,
@@ -97,20 +101,20 @@ const AstrologerAgent: React.FC<AstrologerProps> = ({ messages }) => {
       });
 
       if (!response.ok) {
-        throw new Error("星座运势生成失败");
+        throw new Error("姓名占卜生成失败");
       }
 
       const data = await response.json();
-      const predictionText =
-        data.choices[0]?.message?.content || "无法生成星座运势分析";
-      setPrediction(predictionText);
+      const divinationText =
+        data.choices[0]?.message?.content || "无法生成姓名占卜分析";
+      setDivination(divinationText);
 
       if (messages.length > 0) {
         setLastMessageId(messages[messages.length - 1].id);
       }
     } catch (error) {
-      console.error("星座运势生成错误:", error);
-      setPrediction("星座运势生成失败，请稍后再试。");
+      console.error("姓名占卜生成错误:", error);
+      setDivination("姓名占卜生成失败，请稍后再试。");
     } finally {
       setIsLoading(false);
       isGeneratingRef.current = false;
@@ -118,21 +122,21 @@ const AstrologerAgent: React.FC<AstrologerProps> = ({ messages }) => {
   };
 
   useEffect(() => {
-    generatePrediction();
+    generateDivination();
   }, [messages]);
 
   return (
-    <div className="p-4 bg-gray-100 rounded-lg shadow-md">
-      <h3 className="font-bold mb-2">星座运势分析</h3>
+    <div className="p-4 bg-gray-100 rounded-lg shadow-md mt-4">
+      <h3 className="font-bold mb-2">姓名占卜</h3>
       {isLoading ? (
-        <p className="text-gray-500">正在进行星座运势分析...</p>
+        <p className="text-gray-500">正在进行姓名占卜分析...</p>
       ) : (
         <div className="prose prose-sm max-w-none dark:prose-invert">
-          <ReactMarkdown>{prediction}</ReactMarkdown>
+          <ReactMarkdown>{divination}</ReactMarkdown>
         </div>
       )}
     </div>
   );
 };
 
-export default AstrologerAgent;
+export default NameDivinationAgent;
