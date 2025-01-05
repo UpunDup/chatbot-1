@@ -27,14 +27,23 @@ type StreamChunk = {
   }[];
 };
 
+// 添加新的类型定义
+type SearchResult = {
+  title: string;
+  link: string;
+  snippet: string;
+}
+
 // 添加配置常量
 const API_CONFIG = {
+
   baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
   model: "Qwen/Qwen2.5-7B-Instruct",
   apiKey: process.env.NEXT_PUBLIC_SILICON_API_KEY || "",
   systemMessage:
     "你是一个景点推荐机器人。请将收到的景点信息以 markdown 列表的形式输出，每个景点前面加上 '- ' 符号。不要添加任何额外的描述、建议或者行程规划。",
 };
+
 
 const ChatInterface = () => {
   // 添加状态管理
@@ -45,11 +54,13 @@ const ChatInterface = () => {
         "请你告诉我你想游玩的城市，并且告诉我游玩的天数（比如重庆、三天两夜），我会为你提供完整的旅行攻略！",
       role: "ai",
     },
+
   ]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [webEnabled, setWebEnabled] = useState(false);
+
 
   // 取消未完成的请求
   useEffect(() => {
@@ -59,6 +70,33 @@ const ChatInterface = () => {
       }
     };
   }, []);
+
+  // 添加搜索函数
+  const searchWeb = async (query: string): Promise<string> => {
+    try {
+      const response = await fetch(API_CONFIG.searchApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query })
+      });
+      
+      if (!response.ok) {
+        throw new Error('搜索请求失败');
+      }
+      
+      const searchResults: SearchResult[] = await response.json();
+      
+      // 将搜索结果格式化为文本
+      return searchResults.map(result => 
+        `标题: ${result.title}\n链接: ${result.link}\n摘要: ${result.snippet}\n\n`
+      ).join('---\n');
+    } catch (error) {
+      console.error('搜索失败:', error);
+      throw error;
+    }
+  }
 
   // 修改发送消息处理函数
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -73,6 +111,7 @@ const ChatInterface = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
+
 
     abortControllerRef.current = new AbortController();
 
@@ -108,6 +147,7 @@ ${
         } catch (error) {
           console.error("搜索失败:", error);
           finalPrompt = inputValue;
+
         }
       }
 
@@ -121,6 +161,7 @@ ${
           model: API_CONFIG.model,
           messages: [
             {
+
               role: "system",
               content: API_CONFIG.systemMessage,
             },
@@ -128,6 +169,7 @@ ${
               role: "user",
               content: finalPrompt,
             },
+
           ],
           stream: true,
         }),
@@ -179,6 +221,7 @@ ${
     } catch (error: any) {
       if (error.name === "AbortError") {
         console.log("请求被取消");
+
       } else {
         console.error("发送消息失败:", error);
         setMessages((prev) => [
@@ -298,6 +341,7 @@ ${
             className="flex-1"
             disabled={isLoading}
           />
+
           <Button
             variant="outline"
             size="icon"
@@ -305,6 +349,7 @@ ${
             disabled={isLoading}
             onClick={() => setWebEnabled(!webEnabled)}
             className={webEnabled ? "bg-primary text-primary-foreground" : ""}
+
           >
             <Globe className="h-4 w-4" />
           </Button>
